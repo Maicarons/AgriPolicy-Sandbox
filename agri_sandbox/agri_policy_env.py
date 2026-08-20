@@ -7,15 +7,15 @@
 - 决策状态查询（report_status）
 并在每个仿真步（生产季）核算农户收支、把逐帧状态写入回放 SQLite（供 analyze 读取）。
 
-经济学模型为可解释、可审计的简化结构（详见研究计划 §5 与代码内注释），便于把
-"政策冲击 → 农户行为 → 宏观涌现"的因果链条讲清楚，服务于反事实政策评估。
+**解耦说明**：作物目录、价格、成本、保费、租金、灾害阈值等标定参数与逐户核算
+公式全部位于 :mod:`agri_sandbox.economics`（零平台依赖、可单测），本模块只负责
+"环境工具面 + 状态维护 + 回放写入"，参数可通过 ``configs/economics.json`` 覆盖。
 """
 
 from __future__ import annotations
 
 import json
 import random
-import statistics
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -23,27 +23,11 @@ from typing import Any, ClassVar
 from agentsociety2.env import EnvBase, tool
 from agentsociety2.storage import ColumnDef
 
-# ---------------------------------------------------------------------------
-# 作物目录与单位经济参数（示意值，可在 configs/policy_scenarios.json 之外另行标定）
-# yield: 单产 kg/亩；price: 收购价 元/kg；cost: 物化成本 元/亩；
-# premium: 纯保费 元/亩；insured_yield: 保险保产基准 kg/亩
-# ---------------------------------------------------------------------------
-CROPS: dict[str, dict[str, float]] = {
-    "wheat": {"yield": 400, "price": 2.6, "cost": 500, "premium": 15, "insured_yield": 400},
-    "corn": {"yield": 500, "price": 2.4, "cost": 450, "premium": 18, "insured_yield": 500},
-    "rice": {"yield": 550, "price": 2.8, "cost": 700, "premium": 25, "insured_yield": 550},
-    "soybean": {"yield": 180, "price": 5.0, "cost": 300, "premium": 12, "insured_yield": 180},
-    "vegetable": {"yield": 2500, "price": 2.0, "cost": 1500, "premium": 40, "insured_yield": 2500},
-}
-GRAINS = {"wheat", "corn", "rice", "soybean"}
-
-# 土地流转市场（元/亩/季）
-RENT_IN_PER_MU = 500.0
-RENT_OUT_PER_MU = 500.0
-
-# 灾害阈值：天气冲击低于该值视为灾害年景，触发保险赔付
-DISASTER_THRESHOLD = -0.15
-INSURANCE_PAYOUT_RATIO = 0.7  # 赔付保产基准的 70%
+from .economics import (
+    EconomicsParams,
+    compute_farmer_accounting,
+    village_summary,
+)
 
 
 class AgriPolicyEnv(EnvBase):
@@ -95,14 +79,18 @@ class AgriPolicyEnv(EnvBase):
         profiles: list[dict[str, Any]],
         policy: dict[str, Any] | None = None,
         seed: int = 42,
+        economics_params: EconomicsParams | None = None,
     ):
         """初始化环境。
 
         :param profiles: 农户画像列表（顺序与智能体 id 对应）。
         :param policy: 初始政策字典（见 configs/policy_scenarios.json 的 policy 字段）。
         :param seed: 随机种子（天气/价格冲击可复现）。
+        :param economics_params: 标定参数；默认使用 economics 模块默认值，
+            可用 ``configs/economics.json`` 覆盖。
         """
         super().__init__()
+        self._params = economics_params or EconomicsParams()
         self._rng = random.Random(seed)
         self._step_counter = 0
 
@@ -110,20 +98,22 @@ class AgriPolicyEnv(EnvBase):
         self._policy = self._normalize_policy(policy or {})
 
         # 市场冲击（每步随机游走）
-        self._price_shock = {c: 0.0 for c in CROPS}
+        self._price_shock = {c: 0.0 for c in self._params.crops}
         self._weather_shock = 0.0
 
-        # 农户权威状态：name -> dict（含属性与动态决策/上一季结果）
-        self._farmers: dict[str, dict[str, Any]] = {}
+        # 农户权威状态：agent_id -> dict（含属性与动态决策/上一季结果）
+        # 注意：工具参数使用 agent_id（int，智能体从 Agent Identity 可知），
+        # 而不是自然语言名字——避免 LLM 猜错名字（官方 economy_space 同款设计）。
+        self._farmers_by_id: dict[int, dict[str, Any]] = {}
         for i, p in enumerate(profiles):
             name = p.get("name") or f"农户-{i+1:03d}"
-            self._farmers[name] = {
+            self._farmers_by_id[i] = {
                 "id": i,
                 "name": name,
                 "farm_size_mu": float(p.get("farm_size_mu", 10.0)),
                 "risk_attitude": float(p.get("risk_attitude", 0.5)),
                 "off_farm_income_annual": float(p.get("off_farm_income_annual", 0.0)),
-                "available_crops": list(p.get("available_crops", list(CROPS.keys()))),
+                "available_crops": list(p.get("available_crops", list(self._params.crops.keys()))),
                 # 动态决策（跨季持续，可被智能体每季修订）
                 "plan": {},        # crop -> area_mu
                 "insured": {},     # crop -> area_mu
@@ -161,18 +151,18 @@ class AgriPolicyEnv(EnvBase):
     # 工具：观测
     # ------------------------------------------------------------------
     @tool(readonly=True)
-    def observe_market(self, agent_name: str) -> str:
+    def observe_market(self, agent_id: int) -> str:
         """观测当前市场环境与政策（价格、补贴、保险、天气）。每季开始时调用。"""
-        f = self._farmers.get(agent_name)
+        f = self._farmers_by_id.get(agent_id)
         if f is None:
-            return f"未知农户：{agent_name}"
+            return f"未知农户ID：{agent_id}"
         lines = ["【当前市场环境与政策】"]
         lines.append(
             f"天气冲击系数：{self._weather_shock:+.2f}"
-            f"（{'灾害年景' if self._weather_shock < DISASTER_THRESHOLD else '正常/偏好年景'}）"
+            f"（{'灾害年景' if self._weather_shock < self._params.disaster_threshold else '正常/偏好年景'}）"
         )
         lines.append("— 收购价（元/kg，含市场冲击）：")
-        for c, spec in CROPS.items():
+        for c, spec in self._params.crops.items():
             if c in f["available_crops"]:
                 eff = spec["price"] * (1.0 + self._price_shock.get(c, 0.0))
                 lines.append(f"  {c}: {eff:.2f}（基准 {spec['price']}）")
@@ -189,14 +179,14 @@ class AgriPolicyEnv(EnvBase):
     # 工具：生产决策
     # ------------------------------------------------------------------
     @tool(readonly=False)
-    def decide_planting(self, agent_name: str, crop: str, area_mu: float) -> str:
+    def decide_planting(self, agent_id: int, crop: str, area_mu: float) -> str:
         """决定某种植作物的面积（亩）。可多次调用以设定全部作物的生产结构；设 0 表示不种。"""
-        f = self._farmers.get(agent_name)
+        f = self._farmers_by_id.get(agent_id)
         if f is None:
-            return f"未知农户：{agent_name}"
+            return f"未知农户ID：{agent_id}"
         crop = (crop or "").strip().lower()
-        if crop not in CROPS:
-            return f"不支持的作物：{crop}（可选：{', '.join(CROPS)}）"
+        if crop not in self._params.crops:
+            return f"不支持的作物：{crop}（可选：{', '.join(self._params.crops)}）"
         if crop not in f["available_crops"]:
             return f"你所在区域不可种植 {crop}（可选：{', '.join(f['available_crops'])}）"
         area_mu = max(0.0, float(area_mu))
@@ -207,13 +197,13 @@ class AgriPolicyEnv(EnvBase):
         return f"已更新生产结构：{f['plan']}"
 
     @tool(readonly=False)
-    def buy_insurance(self, agent_name: str, crop: str, area_mu: float) -> str:
+    def buy_insurance(self, agent_id: int, crop: str, area_mu: float) -> str:
         """为某作物投保指定面积（亩）。设 0 表示退保该作物。"""
-        f = self._farmers.get(agent_name)
+        f = self._farmers_by_id.get(agent_id)
         if f is None:
-            return f"未知农户：{agent_name}"
+            return f"未知农户ID：{agent_id}"
         crop = (crop or "").strip().lower()
-        if crop not in CROPS:
+        if crop not in self._params.crops:
             return f"不支持的作物：{crop}"
         area_mu = max(0.0, float(area_mu))
         if area_mu <= 0:
@@ -223,11 +213,11 @@ class AgriPolicyEnv(EnvBase):
         return f"已更新保险：{f['insured']}"
 
     @tool(readonly=False)
-    def transfer_land(self, agent_name: str, direction: str, area_mu: float) -> str:
+    def transfer_land(self, agent_id: int, direction: str, area_mu: float) -> str:
         """土地流转：direction='in' 租入（扩大经营），direction='out' 转出（退出承包）。"""
-        f = self._farmers.get(agent_name)
+        f = self._farmers_by_id.get(agent_id)
         if f is None:
-            return f"未知农户：{agent_name}"
+            return f"未知农户ID：{agent_id}"
         direction = (direction or "").strip().lower()
         area_mu = max(0.0, float(area_mu))
         if direction == "in":
@@ -241,11 +231,11 @@ class AgriPolicyEnv(EnvBase):
         return f"已更新土地流转：转入 {f['transfer_in']} 亩 / 转出 {f['transfer_out']} 亩"
 
     @tool(readonly=True)
-    def report_status(self, agent_name: str) -> str:
+    def report_status(self, agent_id: int) -> str:
         """查询本农户上一季的核算结果与当前决策，便于复盘。"""
-        f = self._farmers.get(agent_name)
+        f = self._farmers_by_id.get(agent_id)
         if f is None:
-            return f"未知农户：{agent_name}"
+            return f"未知农户ID：{agent_id}"
         last = f.get("last") or {}
         return json.dumps(
             {
@@ -267,7 +257,7 @@ class AgriPolicyEnv(EnvBase):
     def set_subsidy(self, crop: str, amount_per_mu: float) -> str:
         """设定某作物生产性补贴（元/亩）。amount_per_mu=0 表示取消。"""
         crop = (crop or "").strip().lower()
-        if crop not in CROPS:
+        if crop not in self._params.crops:
             return f"不支持的作物：{crop}"
         amount = max(0.0, float(amount_per_mu))
         if amount <= 0:
@@ -297,74 +287,36 @@ class AgriPolicyEnv(EnvBase):
         self._step_counter += 1
 
         # 1) 更新市场/天气冲击
-        for c in CROPS:
+        lo_p, hi_p = self._params.price_shock_bounds
+        for c in self._params.crops:
             self._price_shock[c] = max(
-                -0.4, min(0.4, self._price_shock[c] + self._rng.gauss(0, 0.05))
+                lo_p, min(hi_p, self._price_shock[c] + self._rng.gauss(0, self._params.price_shock_sigma))
             )
-        self._weather_shock = max(-0.5, min(0.3, self._rng.gauss(-0.02, 0.18)))
+        lo_w, hi_w = self._params.weather_shock_bounds
+        self._weather_shock = max(
+            lo_w, min(hi_w, self._rng.gauss(self._params.weather_shock_mu, self._params.weather_shock_sigma))
+        )
 
-        # 2) 逐户核算
-        net_incomes: list[float] = []
-        subsidy_incomes: list[float] = []
-        coverage_rates: list[float] = []
-        planted_areas: list[float] = []
-        n_planting = 0
+        # 2) 逐户核算（纯函数见 economics.compute_farmer_accounting）
+        accounts = []
         total_subsidy = 0.0
 
-        for f in self._farmers.values():
-            gross = 0.0
-            cost = 0.0
-            subsidy = 0.0
-            insurance_payout = 0.0
-            planted_area = sum(f["plan"].values())
-            insured_area = sum(f["insured"].values())
-
-            for crop, area in f["plan"].items():
-                spec = CROPS[crop]
-                eff_price = spec["price"] * (1.0 + self._price_shock.get(crop, 0.0))
-                yield_ = spec["yield"] * (1.0 + self._weather_shock)
-                gross += yield_ * area * eff_price
-                cost += spec["cost"] * area
-
-                sub = self._policy["subsidy_per_mu"].get(crop, 0.0)
-                subsidy += area * sub
-                if crop in GRAINS:
-                    subsidy += area * self._policy["grain_price_support"]
-
-                ins_area = f["insured"].get(crop, 0.0)
-                premium = spec["premium"] * ins_area * (1.0 - self._policy["insurance_subsidy_rate"])
-                cost += premium
-                if self._weather_shock < DISASTER_THRESHOLD and ins_area > 0:
-                    insurance_payout += (
-                        ins_area * spec["insured_yield"] * eff_price * INSURANCE_PAYOUT_RATIO
-                    )
-
-            rent_income = (
-                f["transfer_out"] * RENT_OUT_PER_MU
-                + f["transfer_out"] * self._policy["land_transfer_out_subsidy_per_mu"]
+        for f in self._farmers_by_id.values():
+            acct = compute_farmer_accounting(
+                plan=f["plan"],
+                insured=f["insured"],
+                transfer_in_mu=f["transfer_in"],
+                transfer_out_mu=f["transfer_out"],
+                policy=self._policy,
+                price_shock=self._price_shock,
+                weather_shock=self._weather_shock,
+                off_farm_income_annual=f["off_farm_income_annual"],
+                params=self._params,
             )
-            cost += f["transfer_in"] * RENT_IN_PER_MU
-            off_farm_quarter = f["off_farm_income_annual"] / 4.0
+            accounts.append(acct)
+            total_subsidy += acct.subsidy_income
 
-            net = gross + subsidy + insurance_payout + rent_income + off_farm_quarter - cost
-
-            f["last"] = {
-                "gross_revenue": gross,
-                "subsidy_income": subsidy,
-                "insurance_payout": insurance_payout,
-                "total_cost": cost,
-                "net_income": net,
-                "planted_area_mu": planted_area,
-                "insured_area_mu": insured_area,
-            }
-
-            net_incomes.append(net)
-            subsidy_incomes.append(subsidy)
-            planted_areas.append(planted_area)
-            if planted_area > 0:
-                n_planting += 1
-                coverage_rates.append(min(1.0, insured_area / planted_area) if planted_area else 0.0)
-            total_subsidy += subsidy
+            f["last"] = acct.to_dict()
 
             # 3) 逐户回放行
             await self._write_agent_state(
@@ -372,28 +324,23 @@ class AgriPolicyEnv(EnvBase):
                 step=self._step_counter,
                 t=t,
                 crop_mix_json=json.dumps(f["plan"], ensure_ascii=False),
-                planted_area_mu=planted_area,
-                insured_area_mu=insured_area,
+                planted_area_mu=acct.planted_area_mu,
+                insured_area_mu=acct.insured_area_mu,
                 transfer_in_mu=f["transfer_in"],
                 transfer_out_mu=f["transfer_out"],
-                gross_revenue=gross,
-                subsidy_income=subsidy,
-                insurance_payout=insurance_payout,
-                total_cost=cost,
-                net_income=net,
+                gross_revenue=acct.gross_revenue,
+                subsidy_income=acct.subsidy_income,
+                insurance_payout=acct.insurance_payout,
+                total_cost=acct.total_cost,
+                net_income=acct.net_income,
             )
 
         # 4) 环境级回放行
+        summary = village_summary(accounts, total_subsidy, self._weather_shock)
         await self._write_env_state(
             step=self._step_counter,
             t=t,
-            avg_net_income=statistics.fmean(net_incomes) if net_incomes else 0.0,
-            avg_subsidy_income=statistics.fmean(subsidy_incomes) if subsidy_incomes else 0.0,
-            insurance_coverage_rate=statistics.fmean(coverage_rates) if coverage_rates else 0.0,
-            avg_planted_area=statistics.fmean(planted_areas) if planted_areas else 0.0,
-            n_planting_farmers=n_planting,
-            total_subsidy=total_subsidy,
-            weather_shock=self._weather_shock,
+            **summary,
         )
 
         self.t = t

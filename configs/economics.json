@@ -1,0 +1,19 @@
+{
+  "$comment": "农业经济学标定参数（可覆盖 agri_sandbox/economics.py 默认值）。正式实验前应基于统计年鉴/固定观察点数据重新标定。单位：面积=亩，金额=元，价格=元/kg。",
+  "crops": {
+    "wheat":    { "yield": 400,  "price": 2.6, "cost": 500,  "premium": 15, "insured_yield": 400 },
+    "corn":     { "yield": 500,  "price": 2.4, "cost": 450,  "premium": 18, "insured_yield": 500 },
+    "rice":     { "yield": 550,  "price": 2.8, "cost": 700,  "premium": 25, "insured_yield": 550 },
+    "soybean":  { "yield": 180,  "price": 5.0, "cost": 300,  "premium": 12, "insured_yield": 180 },
+    "vegetable":{ "yield": 2500, "price": 2.0, "cost": 1500, "premium": 40, "insured_yield": 2500 }
+  },
+  "rent_in_per_mu": 500.0,
+  "rent_out_per_mu": 500.0,
+  "disaster_threshold": -0.15,
+  "insurance_payout_ratio": 0.7,
+  "price_shock_bounds": [-0.4, 0.4],
+  "price_shock_sigma": 0.05,
+  "weather_shock_bounds": [-0.5, 0.3],
+  "weather_shock_mu": -0.02,
+  "weather_shock_sigma": 0.18
+}

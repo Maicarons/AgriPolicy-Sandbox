@@ -1,8 +1,11 @@
 # AgentSociety² 核心依赖
 # 安装命令（建议在虚拟环境中执行）：
-#   pip install agentsociety2
-# 本仓库代码基于 agentsociety2 >= 2.1.5 编写；如安装报 mineru 等冲突，
-# 可加 --no-deps 仅取包体用于阅读源码，再按需补齐运行依赖。
+#   pip install -r requirements.txt
+# 若全量安装遇到 mineru/torch 等重型依赖冲突，可：
+#   pip install --no-deps agentsociety2
+#   再按 import 报错逐个补缺；本项目在 Windows + Python 3.14 上实测需要补：
+#   json-repair、litellm、aiosqlite(>=0.20)、mem0ai、faiss-cpu、ruamel-yaml、stringcase
+# （agri_sandbox/patches.py 内置了 json_repair.dumps 与 Windows fsync 两个上游兼容补丁）
 agentsociety2>=2.1.5
 
 # 可选的 .env 加载（run_experiment / analyze 会自动回退到手工解析，

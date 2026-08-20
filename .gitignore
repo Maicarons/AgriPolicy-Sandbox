@@ -3,10 +3,12 @@
 .env.local
 *.env
 
-# ===== 运行产出（回放数据库 / 分析结果）=====
+# ===== 运行产出（回放数据库 / 分析结果 / 智能体工作区）=====
 results/
 run/
 **/run/
+agents/
+agent_workspace/
 *.db
 *.sqlite
 *.sqlite3
@@ -19,6 +21,9 @@ __pycache__/
 .eggs/
 build/
 dist/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 .venv/
 venv/
 env/

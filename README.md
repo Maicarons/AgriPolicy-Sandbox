@@ -17,36 +17,45 @@
 ## 2. 目录结构
 
 ```
-agentsociety-contest/
+AgriPolicy-Sandbox/
 ├── .env.example                 # LLM 配置模板（复制为 .env 后填密钥，勿提交）
 ├── .gitignore
 ├── requirements.txt
 ├── LICENSE
 ├── README.md
+├── research-plan.md             # 研究计划（v2，含前沿文献与去AI化写作）
 ├── configs/
-│   └── policy_scenarios.json    # 政策情景与默认参数（情景/重复/步数/作物）
-├── agri_sandbox/                # 实验代码包
+│   ├── policy_scenarios.json    # 政策情景与默认参数（情景/重复/步数/作物）
+│   └── economics.json           # 标定参数（作物/价格/成本/保费/租金/灾害阈值）
+├── agri_sandbox/                # 实验代码包（分层解耦）
 │   ├── __init__.py
-│   ├── llm_config.py            # .env 加载与 LLM 配置校验
+│   ├── llm_config.py            # .env 加载与 LLM 配置校验（含上游兼容补丁）
+│   ├── economics.py             # 纯经济核算模型（零平台依赖，可单测、可标定）
 │   ├── profiles.py              # 异质农户画像生成
-│   ├── farmer_agent.py          # FarmerAgent(PersonAgent)
-│   ├── agri_policy_env.py       # AgriPolicyEnv(EnvBase)：工具/政策/回放/经济学核算
-│   ├── run_experiment.py        # 实验编排（基线→施加政策→政策后）
+│   ├── farmer_agent.py          # FarmerAgent(AgentBase，行为实验模式：观察→LLM决策→ask_env)
+│   ├── agri_policy_env.py       # AgriPolicyEnv(EnvBase)：工具/政策/回放（核算调 economics）
+│   ├── experiment.py            # ExperimentSpec + build_world + run_one（编排核心）
+│   ├── run_experiment.py        # CLI 入口（薄层）
 │   ├── analyze.py               # 回放分析（处理效应）
 │   └── agent_skills/
 │       └── agri_decision/       # 农户决策技能 SKILL.md
-├── paper/
-│   └── research-plan-paper.pdf  # 论文形式研究计划（XeLaTeX 编译）
-├── docs/
+├── tests/
+│   └── test_economics.py        # 核算纯函数单测
+├── paper/                       # 论文源文件与 PDF（本地保留，未随仓库发布）
 └── results/                     # 运行产出（回放 SQLite / 分析摘要，已被 .gitignore 忽略）
 ```
+
+**解耦原则**：标定参数与核算公式独立于平台（`economics.py` + `configs/economics.json`，可单测、可审计）；
+实验编排独立于命令行（`experiment.py` 可被脚本/测试复用）；CLI 只负责装配参数。
 
 ## 3. 安装与配置
 
 ```bash
 # 1) 安装依赖（建议在虚拟环境中）
 pip install -r requirements.txt
-#   若报 mineru 等依赖冲突：pip install --no-deps agentsociety2 仅取包体阅读源码
+#   若遇到 mineru/torch 等重型依赖冲突：pip install --no-deps agentsociety2
+#   再按 import 报错逐个补缺（本项目已验证：json-repair、litellm、aiosqlite、mem0ai、
+#   faiss-cpu、ruamel-yaml、stringcase），llm_config.py 内置 json_repair.dumps 兼容补丁。
 
 # 2) 配置 LLM（复制模板并填入你的 Key）
 cp .env.example .env
@@ -69,6 +78,12 @@ python -m agri_sandbox.run_experiment --all
 # 自定义：单情景、80 农户、基线 6 步、政策 10 步
 python -m agri_sandbox.run_experiment --scenario combined --agents 80 \
     --baseline-steps 6 --policy-steps 10 --repeats 5
+
+# 覆盖标定参数（可编辑 configs/economics.json，或用 --economics 指定其他文件）
+python -m agri_sandbox.run_experiment --scenario grain_subsidy --economics configs/economics.json
+
+# 单元测试（纯经济核算模型，无需平台/网络）
+python -m unittest discover -s tests -v
 ```
 
 实验采用**分阶段反事实**设计：先以空政策运行 `baseline_steps` 步，再施加所选情景政策运行
@@ -87,8 +102,10 @@ python -m agri_sandbox.analyze --results-dir results
 ## 6. 研究方法要点
 
 - **反事实识别**：同一批农户前后对照，控制个体异质性，得到 cleaner 的政策处理效应。
-- **可解释经济学**：环境内置简化但可审计的收支模型（单产×价格−成本+补贴+保险赔付±流转收支），
-  所有假设集中在 `agri_policy_env.py` 顶部常量与 `step()` 注释中，便于标定与答辩。
+- **可解释经济学**：收支核算集中在 `agri_sandbox/economics.py`（纯函数 + 单元测试），
+  参数集中在 `configs/economics.json`，换数据标定不改代码，答辩可逐项审计。
+- **分层解耦**：经济模型 / 环境工具 / 智能体 / 实验编排 / CLI / 分析各自独立，
+  便于替换平台版本或单独复测核算公式。
 - **异质性**：农户在区域、规模、风险态度、资产、兼业程度、年龄/教育上异质，对应农户行为关键调节变量。
 - **理论贡献空间**：公地治理 / 风险分担 / 劳动力再配置等政策机制可在本框架内机制化检验。
 

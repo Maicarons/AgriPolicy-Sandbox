@@ -79,8 +79,19 @@ def load_dotenv_if_present(start: Path | None = None) -> bool:
     return loaded
 
 
+def _patch_json_repair_dumps() -> None:
+    """兼容 agentsociety2 对 ``json_repair.dumps`` 的调用（实现见 patches.py）。"""
+    from .patches import patch_json_repair_dumps
+
+    patch_json_repair_dumps()
+
+
 def ensure_llm_config(quiet: bool = False) -> None:
-    """校验 LLM 关键配置；缺失则打印清晰指引并以非零码退出。"""
+    """校验 LLM 关键配置；缺失则打印清晰指引并以非零码退出。
+
+    同时应用上游兼容性补丁（json_repair.dumps）。
+    """
+    _patch_json_repair_dumps()
     load_dotenv_if_present()
     missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
     if missing:
