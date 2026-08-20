@@ -1,0 +1,64 @@
+{
+  "defaults": {
+    "num_agents": 50,
+    "seed": 42,
+    "baseline_steps": 8,
+    "policy_steps": 8,
+    "tick_seconds": 7776000,
+    "repeats": 3,
+    "start_date": "2025-01-01T00:00:00",
+    "crops": ["wheat", "corn", "soybean", "rice", "vegetable"]
+  },
+  "scenarios": {
+    "baseline": {
+      "label": "基准情景（无新增补贴）",
+      "description": "不施加任何新政策，作为反事实对照。",
+      "policy": {
+        "subsidy_per_mu": {},
+        "insurance_subsidy_rate": 0.0,
+        "land_transfer_out_subsidy_per_mu": 0.0,
+        "grain_price_support": 0.0
+      }
+    },
+    "grain_subsidy": {
+      "label": "粮食直补（120 元/亩）",
+      "description": "对小麦/玉米/水稻按 120 元/亩给予生产性补贴，检验种植激励与收入效应。",
+      "policy": {
+        "subsidy_per_mu": {"wheat": 120, "corn": 120, "rice": 120, "soybean": 60},
+        "insurance_subsidy_rate": 0.0,
+        "land_transfer_out_subsidy_per_mu": 0.0,
+        "grain_price_support": 0.0
+      }
+    },
+    "insurance_subsidy": {
+      "label": "农业保险保费补贴（80%）",
+      "description": "政府承担 80% 保费，检验风险厌恶型农户的参保率与抗灾韧性。",
+      "policy": {
+        "subsidy_per_mu": {},
+        "insurance_subsidy_rate": 0.8,
+        "land_transfer_out_subsidy_per_mu": 0.0,
+        "grain_price_support": 0.0
+      }
+    },
+    "land_transfer_subsidy": {
+      "label": "土地流转激励（转出 200 元/亩）",
+      "description": "对退出土地承包（转出）给予 200 元/亩补贴，检验规模经营与劳动力再配置。",
+      "policy": {
+        "subsidy_per_mu": {},
+        "insurance_subsidy_rate": 0.0,
+        "land_transfer_out_subsidy_per_mu": 200.0,
+        "grain_price_support": 0.0
+      }
+    },
+    "combined": {
+      "label": "组合政策（直补+保险+流转）",
+      "description": "综合施加粮食直补、保险保费补贴与土地流转补贴，检验政策协同效应。",
+      "policy": {
+        "subsidy_per_mu": {"wheat": 120, "corn": 120, "rice": 120, "soybean": 60},
+        "insurance_subsidy_rate": 0.8,
+        "land_transfer_out_subsidy_per_mu": 200.0,
+        "grain_price_support": 0.0
+      }
+    }
+  }
+}

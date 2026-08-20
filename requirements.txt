@@ -1,0 +1,13 @@
+# AgentSociety² 核心依赖
+# 安装命令（建议在虚拟环境中执行）：
+#   pip install agentsociety2
+# 本仓库代码基于 agentsociety2 >= 2.1.5 编写；如安装报 mineru 等冲突，
+# 可加 --no-deps 仅取包体用于阅读源码，再按需补齐运行依赖。
+agentsociety2>=2.1.5
+
+# 可选的 .env 加载（run_experiment / analyze 会自动回退到手工解析，
+# 但若希望用 python-dotenv 加载更稳健，可安装）：
+python-dotenv>=1.0.0
+
+# 数据分析（analyze.py 默认使用标准库 sqlite3；如需更顺滑的分析可装 duckdb）：
+# duckdb>=0.10.0

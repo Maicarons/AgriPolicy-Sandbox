@@ -1,0 +1,37 @@
+# ===== 密钥与环境 =====
+.env
+.env.local
+*.env
+
+# ===== 运行产出（回放数据库 / 分析结果）=====
+results/
+run/
+**/run/
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.Python
+
+# ===== 编辑器 / 系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ===== 日志 / 临时 =====
+*.log
+.agent_workspace/
+
+paper/
