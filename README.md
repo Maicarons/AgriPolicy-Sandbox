@@ -4,6 +4,8 @@
 >
 > 对应比赛赛道：**数智公共管理与国家治理**。
 
+📚 **项目文档（VitePress，由 GitHub Pages 自动发布）**：https://maicarons.github.io/AgriPolicy-Sandbox/
+
 ## 1. 项目简介
 
 本项目把"农户"建模为具有真实偏好、风险态度与家庭约束的 LLM 智能体，在可定制的村庄农业经济环境中，
@@ -117,3 +119,17 @@ python -m agri_sandbox.analyze --results-dir results
 
 本仓库代码与数据均为科研沙盒原型，经济学参数均为示意值，不代表任何真实政策效果；
 真实结论须以标定后的参数、平台运行数据与统计推断为准。
+
+## 9. 文档站点
+
+本项目文档使用 [VitePress](https://vitepress.dev/) 编写，位于 `docs/` 目录，由 GitHub Pages 通过
+CI（`.github/workflows/deploy-docs.yml`）在推送 `main` 且 `docs/` 变更时自动构建并发布：
+
+- **在线文档**：https://maicarons.github.io/AgriPolicy-Sandbox/
+- **文档源**：`docs/index.md` 及 `guide/`、`concepts/`、`methodology/`、`api/`、`reference/` 子目录
+- **本地预览**：`cd docs && npm install && npm run docs:dev`
+- **本地构建**：`cd docs && npm run docs:build`（产物位于 `docs/.vitepress/dist`）
+
+文档内容覆盖：快速开始、配置说明、运行实验、回放分析、核心概念（架构 / 农户智能体 / 政策环境 /
+经济模型 / 情景）、研究方法（问题 / 设计 / 识别策略）、API 参考（economics / 环境工具 / CLI / 数据表）、
+贡献指南与许可免责。

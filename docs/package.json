@@ -1,0 +1,16 @@
+{
+  "name": "agripolicy-sandbox-docs",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VitePress 文档站：基于 AgentSociety² 的农业政策反事实模拟沙盒",
+  "scripts": {
+    "docs:dev": "vitepress dev",
+    "docs:build": "vitepress build",
+    "docs:preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3",
+    "vue": "^3.5.13"
+  }
+}

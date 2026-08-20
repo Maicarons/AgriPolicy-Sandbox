@@ -40,3 +40,8 @@ Thumbs.db
 .agent_workspace/
 
 paper/
+
+# ===== VitePress 文档站（构建产物，源文件保留）=====
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/

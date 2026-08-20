@@ -1,0 +1,24 @@
+/* AgriPolicy Sandbox 文档主题微调 */
+:root {
+  --vp-c-brand-1: #2e7d32;
+  --vp-c-brand-2: #388e3c;
+  --vp-c-brand-3: #43a047;
+  --vp-c-brand-soft: #2e7d321f;
+}
+
+.dark {
+  --vp-c-brand-1: #66bb6a;
+  --vp-c-brand-2: #4caf50;
+  --vp-c-brand-3: #43a047;
+  --vp-c-brand-soft: #66bb6a1f;
+}
+
+/* 首页特性卡片标题颜色 */
+.VPFeature .title {
+  color: var(--vp-c-brand-1);
+}
+
+/* 代码块与表格在暗色下更协调 */
+.vp-doc :not(pre) > code {
+  font-size: 0.85em;
+}
