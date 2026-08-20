@@ -57,6 +57,26 @@
 
 `analyze` 用 `baseline_steps` 把 `step` 拆成基线期（`step <= baseline_steps`）与政策期（`step > baseline_steps`）。
 
+## 运行进度与配置快照
+
+每个 `run_dir` 下另有两个非回放文件，供可视化与复现使用：
+
+**`run_progress.json`**（运行中每步更新，供 [可视化 Web](/guide/webview) 轮询）：
+
+```json
+{
+  "scenario_key": "combined", "repeat": 0,
+  "status": "running", "phase": "policy",
+  "step": 10, "step_total": 16,
+  "started_at": "2026-08-21T01:00:00", "updated_at": "2026-08-21T01:12:33"
+}
+```
+
+**`config_snapshot.json`**（实验完成时写入）：该次运行生效的 `policy` 与标定参数（`economics`）快照，
+与 `run_meta.json` 一起构成复现依据。
+
+`run_meta.json` 还记录 `model`（LLM 模型名）与 `code_commit`（git HEAD），便于追溯运行时的代码版本。
+
 ## 示例查询
 
 ```sql

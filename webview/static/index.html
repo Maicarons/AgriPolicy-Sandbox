@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AgriPolicy Sandbox · 实验可视化</title>
+<link rel="stylesheet" href="/assets/style.css"/>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🌾</span>
+    <div>
+      <h1>AgriPolicy Sandbox</h1>
+      <p class="sub">农业政策反事实模拟 · 实验可视化仪表盘</p>
+    </div>
+  </div>
+  <div class="topmeta">
+    <div class="stat"><span class="dot dot-run"></span>运行中 <b id="stat-running">0</b></div>
+    <div class="stat"><span class="dot dot-done"></span>已完成 <b id="stat-done">0</b></div>
+    <div class="stat"><span class="dot dot-pend"></span>待运行 <b id="stat-pending">0</b></div>
+    <div class="conn" id="conn" title="与后端连接状态">●</div>
+  </div>
+</header>
+
+<main>
+  <section class="cards" id="scenario-cards"></section>
+
+  <section class="workspace">
+    <div class="panel scene-panel">
+      <div class="panel-head">
+        <h2>村庄场景</h2>
+        <div class="run-pick">
+          <label for="run-select">运行</label>
+          <select id="run-select"></select>
+        </div>
+      </div>
+      <div class="scene-meta" id="scene-meta"></div>
+      <div id="village" class="village"><div class="placeholder">等待运行数据…</div></div>
+      <div class="legend" id="legend"></div>
+      <div class="farmer-detail" id="farmer-detail"></div>
+    </div>
+
+    <div class="panel charts-panel">
+      <div class="panel-head">
+        <h2>村级指标</h2>
+        <span class="muted" id="chart-sub"></span>
+      </div>
+      <div class="chart" id="chart-income"></div>
+      <div class="chart" id="chart-coverage"></div>
+      <div class="chart-row">
+        <div class="chart half" id="chart-planted"></div>
+        <div class="chart half" id="chart-subsidy"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel runs-panel">
+    <div class="panel-head">
+      <h2>运行进度</h2>
+      <span class="muted" id="runs-hint"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="runs-table">
+        <thead>
+          <tr>
+            <th>情景</th><th>重复</th><th>状态</th><th>阶段</th>
+            <th>步骤</th><th>进度</th><th>耗时</th><th>模型</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  AgriPolicy Sandbox · 每 3s 自动刷新 · 数据来源：<code>results/</code> 回放与运行元信息
+</footer>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>

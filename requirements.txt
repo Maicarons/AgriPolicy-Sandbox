@@ -14,3 +14,7 @@ python-dotenv>=1.0.0
 
 # 数据分析（analyze.py 默认使用标准库 sqlite3；如需更顺滑的分析可装 duckdb）：
 # duckdb>=0.10.0
+
+# 实验可视化 Web（webview/server.py；可选，实验运行本身不依赖）：
+fastapi>=0.115.0
+uvicorn>=0.30.0

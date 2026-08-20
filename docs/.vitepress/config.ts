@@ -30,6 +30,7 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '配置说明', link: '/guide/configuration' },
             { text: '运行实验', link: '/guide/running-experiments' },
+            { text: '实验可视化 Web', link: '/guide/webview' },
             { text: '回放分析', link: '/guide/analysis' },
           ],
         },

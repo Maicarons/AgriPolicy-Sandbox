@@ -41,6 +41,8 @@ Thumbs.db
 
 paper/
 
+scripts_monitor.sh
+
 # ===== VitePress 文档站（构建产物，源文件保留）=====
 docs/node_modules/
 docs/.vitepress/dist/

@@ -136,20 +136,94 @@ def build_world(
     return env, society, run_dir
 
 
+def _write_progress(run_dir: Path, *, scenario: str, repeat: int, status: str,
+                    phase: str, step: int, step_total: int, started_at: str) -> None:
+    """写入运行进度（供 webview 实时轮询）。"""
+    (run_dir / "run_progress.json").write_text(
+        json.dumps({
+            "scenario_key": scenario,
+            "repeat": repeat,
+            "status": status,
+            "phase": phase,
+            "step": step,
+            "step_total": step_total,
+            "started_at": started_at,
+            "updated_at": datetime.now().isoformat(),
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _model_name() -> str:
+    """当前 LLM 模型名（供 run_meta 记录；.env 未配置时回退 unknown）。"""
+    import os
+    return (
+        os.environ.get("AGENTSOCIETY_NANO_LLM_MODEL")
+        or os.environ.get("AGENTSOCIETY_LLM_MODEL")
+        or "unknown"
+    )
+
+
+def _code_commit() -> str | None:
+    """当前代码 commit（可复现性记录；非 git 环境返回 None）。"""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        return out or None
+    except Exception:
+        return None
+
+
+async def _run_steps(society, n: int, tick: int, spec: ExperimentSpec,
+                     phase: str, started_at: str, total_steps: int) -> None:
+    """逐步运行 n 个生产季，每步后写入进度文件（供可视化实时观察）。
+
+    说明：``AgentSociety.run(num_steps=1)`` 与一次跑多步等价（run 内部即循环
+    ``step(tick)`` 且内部时钟 ``_t`` 持续累加），仅多了 Python 层循环与进度落盘，
+    对 LLM 决策耗时（每户季 ~25s）可忽略。
+    """
+    for i in range(1, n + 1):
+        await society.run(num_steps=1, tick=tick)
+        _write_progress(spec.run_dir, scenario=spec.scenario_key, repeat=spec.repeat,
+                        status="running", phase=phase, step=i, step_total=total_steps,
+                        started_at=started_at)
+
+
 async def run_one(spec: ExperimentSpec) -> dict[str, Any]:
     """运行单个分阶段反事实实验，返回元信息。"""
     env, society, run_dir = build_world(spec)
+    started_at = datetime.now().isoformat()
+    total_steps = spec.baseline_steps + spec.policy_steps
+    _write_progress(run_dir, scenario=spec.scenario_key, repeat=spec.repeat,
+                    status="running", phase="baseline", step=0, step_total=total_steps,
+                    started_at=started_at)
     print(
         f"[run] scenario={spec.scenario_key} repeat={spec.repeat} "
         f"agents={spec.num_agents} seed={spec.effective_seed()} -> {run_dir}"
     )
 
     async with society:
-        await society.run(num_steps=spec.baseline_steps, tick=spec.tick_seconds)
+        await _run_steps(society, spec.baseline_steps, spec.tick_seconds, spec,
+                         phase="baseline", started_at=started_at, total_steps=total_steps)
         if spec.phased:
             msg = env.apply_policy(spec.policy)
             print(f"      -> 施加政策：{msg}")
-        await society.run(num_steps=spec.policy_steps, tick=spec.tick_seconds)
+        await _run_steps(society, spec.policy_steps, spec.tick_seconds, spec,
+                         phase="policy", started_at=started_at, total_steps=total_steps)
+
+    # config 快照（复现性）：政策 + 生效的经济标定参数
+    try:
+        (run_dir / "config_snapshot.json").write_text(
+            json.dumps({
+                "policy": spec.policy,
+                "economics": env._params.to_dict() if hasattr(env, "_params") else None,
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
     meta: dict[str, Any] = {
         "scenario_key": spec.scenario_key,
@@ -164,11 +238,26 @@ async def run_one(spec: ExperimentSpec) -> dict[str, Any]:
         "phased": spec.phased,
         "policy": spec.policy,
         "economics_path": str(spec.economics_path) if spec.economics_path else None,
+        "model": _model_name(),
+        "code_commit": _code_commit(),
         "run_dir": str(run_dir),
         "finished_at": datetime.now().isoformat(),
     }
     (run_dir / "run_meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (run_dir / "run_progress.json").write_text(
+        json.dumps({
+            "scenario_key": spec.scenario_key,
+            "repeat": spec.repeat,
+            "status": "done",
+            "phase": "policy",
+            "step": total_steps,
+            "step_total": total_steps,
+            "started_at": started_at,
+            "updated_at": datetime.now().isoformat(),
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
     return meta
 

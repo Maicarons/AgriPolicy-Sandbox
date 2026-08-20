@@ -10,6 +10,7 @@
 | `--scenario KEY` | 无 | 单情景（如 `combined`） |
 | `--all` | 关 | 运行全部情景 |
 | `--repeats N` | 配置默认(3) | 重复次数 |
+| `--repeat N` | 无 | 仅运行指定重复编号（须与 `--scenario` 联用；并行/续跑） |
 | `--agents N` | 配置默认(50) | 农户数 |
 | `--baseline-steps N` | 配置默认(8) | 阶段一步数 |
 | `--policy-steps N` | 配置默认(8) | 阶段二步数 |
@@ -20,7 +21,7 @@
 
 若既不传 `--all` 也不传 `--scenario`，默认只跑 `baseline` 一次作为连通性自检。
 
-**产物**：`results/<情景>/repeat_<r>/sqlite.db`、`run_meta.json`，以及 `results/runs_index.json`。
+**产物**：`results/<情景>/repeat_<r>/sqlite.db`、`run_meta.json`（含模型/代码 commit）、`run_progress.json`（逐步进度）、`config_snapshot.json`（政策+标定快照），以及 `results/runs_index.json`。
 
 ## `analyze`
 

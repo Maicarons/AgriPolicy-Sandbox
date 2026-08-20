@@ -51,6 +51,8 @@ AgriPolicy Sandbox 在 [AgentSociety²](https://agentsociety2.readthedocs.io/zh-
 | `experiment.py` | 由 spec 构造世界、运行分阶段反事实 | 依赖 `agentsociety2` + 上述各层 |
 | `run_experiment.py` | 命令行解析与参数装配 | 仅依赖 `experiment` |
 | `analyze.py` | 读回放库算处理效应 | 仅 `sqlite3` + 标准库 |
+| `webview/server.py` | 实验可视化 Web（运行进展 + 村庄场景 + 指标曲线） | `fastapi` + `sqlite3`，前端零依赖 |
+| `run_full_experiment.sh` | 完整实验流程脚本（smoke/full/analyze/status/webui） | bash |
 
 > **关键收益**：`economics.py` 不 import 任何 `agentsociety2` 组件，因此可在无平台、无网络的
 > 环境下单独跑单元测试（`tests/test_economics.py`），保证"账怎么算"始终透明、可审计。
@@ -59,10 +61,11 @@ AgriPolicy Sandbox 在 [AgentSociety²](https://agentsociety2.readthedocs.io/zh-
 
 1. `profiles.make_farmer_profiles` 生成 N 个异质农户画像；
 2. `build_world` 由 `ExperimentSpec` 构造 `AgriPolicyEnv` + N 个 `FarmerAgent` + `ReActRouter` + `AgentSociety`；
-3. `AgentSociety.run(baseline_steps)` → 空政策运行若干季；
+3. `AgentSociety.run(1)` 逐步运行空政策季（`run_one` 每步写 `run_progress.json`，供 Web 实时观察）；
 4. `env.apply_policy(policy)` 施加情景政策；
-5. `AgentSociety.run(policy_steps)` → 政策后运行若干季；
+5. 逐步运行政策后季（同上，写进度与回放）；
 6. 每季 `AgriPolicyEnv.step` 调用 `compute_farmer_accounting` 逐户核算，并写入回放表；
-7. `analyze` 读回放库，输出处理效应摘要。
+7. `analyze` 读回放库，输出处理效应摘要；
+8. `webview` 只读 `run_progress.json` / `run_meta.json` / 回放 SQLite，渲染运行进展与村庄场景。
 
 下一步：[农户智能体 FarmerAgent](/concepts/farmer-agent)。

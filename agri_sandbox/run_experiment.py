@@ -4,6 +4,8 @@
     python -m agri_sandbox.run_experiment --all
     python -m agri_sandbox.run_experiment --scenario grain_subsidy --repeats 3
     python -m agri_sandbox.run_experiment --scenario combined --agents 80 --baseline-steps 6 --policy-steps 10
+    python -m agri_sandbox.run_experiment --scenario baseline --repeat 2   # 单点调度（并行/断点续跑）
+    ./run_full_experiment.sh full                                          # 完整实验流程（见脚本）
 
 默认采用"分阶段反事实"设计（见 :mod:`agri_sandbox.experiment`）：
   阶段一（baseline_steps）：空政策运行；
@@ -47,6 +49,8 @@ def main() -> None:
                         help="运行 configs 中全部情景")
     parser.add_argument("--repeats", type=int, default=None,
                         help="重复次数（覆盖 configs 默认）")
+    parser.add_argument("--repeat", type=int, default=None,
+                        help="仅运行指定重复编号（须与 --scenario 联用；用于并行调度断点续跑）")
     parser.add_argument("--agents", type=int, default=None,
                         help="农户数（覆盖 configs 默认）")
     parser.add_argument("--baseline-steps", type=int, default=None)
@@ -89,6 +93,16 @@ def main() -> None:
     }
     economics_path = args.economics
 
+    if args.repeat is not None:
+        # 单点调度：仅运行指定的 (情景, 重复编号)，供并行/续跑脚本使用
+        if not args.scenario:
+            sys.stderr.write("--repeat 必须与 --scenario 一起使用\n")
+            raise SystemExit(2)
+        keys = [args.scenario]
+        reps = [args.repeat]
+    else:
+        reps = range(args.repeats if args.repeats is not None else repeats)
+
     specs = [
         ExperimentSpec.from_config(
             sk,
@@ -99,7 +113,7 @@ def main() -> None:
             overrides=overrides,
         )
         for sk in keys
-        for r in range(args.repeats if args.repeats is not None else repeats)
+        for r in reps
     ]
     for s in specs:
         if economics_path is not None:

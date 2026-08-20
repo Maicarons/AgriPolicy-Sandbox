@@ -43,6 +43,10 @@ AgriPolicy-Sandbox/
 │       └── agri_decision/       # 农户决策技能 SKILL.md
 ├── tests/
 │   └── test_economics.py        # 核算纯函数单测
+├── webview/                     # 实验可视化 Web（FastAPI + 原生前端，见 §10）
+│   ├── server.py                # API（overview/场景快照/时间序列）+ 静态服务
+│   └── static/                  # 暗色仪表盘（HTML/SVG/JS，零前端依赖）
+├── run_full_experiment.sh       # 完整实验脚本（smoke/full/analyze/status/webui）
 ├── paper/                       # 论文源文件与 PDF（本地保留，未随仓库发布）
 └── results/                     # 运行产出（回放 SQLite / 分析摘要，已被 .gitignore 忽略）
 ```
@@ -86,6 +90,9 @@ python -m agri_sandbox.run_experiment --scenario grain_subsidy --economics confi
 
 # 单元测试（纯经济核算模型，无需平台/网络）
 python -m unittest discover -s tests -v
+
+# 完整实验流程（门1+门2 冒烟计时 → 门3 正式批次并行+断点续跑 → 自动分析）
+./run_full_experiment.sh smoke && ./run_full_experiment.sh full
 ```
 
 实验采用**分阶段反事实**设计：先以空政策运行 `baseline_steps` 步，再施加所选情景政策运行
@@ -133,3 +140,20 @@ CI（`.github/workflows/deploy-docs.yml`）在推送 `main` 且 `docs/` 变更�
 文档内容覆盖：快速开始、配置说明、运行实验、回放分析、核心概念（架构 / 农户智能体 / 政策环境 /
 经济模型 / 情景）、研究方法（问题 / 设计 / 识别策略）、API 参考（economics / 环境工具 / CLI / 数据表）、
 贡献指南与许可免责。
+
+## 10. 实验可视化 Web
+
+实验运行时可实时观察进展、可视化村庄场景与村级指标的 Web 仪表盘（原生 HTML + SVG + JS，零前端依赖）：
+
+```bash
+pip install fastapi uvicorn
+python webview/server.py --results-dir results --port 8000
+# 打开 http://127.0.0.1:8000
+```
+
+- **实时进展**：`experiment.run_one` 按生产季逐步执行并写 `run_progress.json`，仪表盘 3s 轮询展示
+  各情景/重复的状态、阶段（基线期/政策期）、步骤进度与耗时；
+- **村庄场景**：读取回放最新一步，SVG 渲染每个农户——颜色=主作物、青色描边=已投保、▲租入/▼转出，
+  点击查看收支详情；
+- **指标曲线**：净收入（均值±农户间标准差带）、保险覆盖率、种植面积、补贴支出，标注政策分界；
+- 更多说明见 `webview/README.md`。
