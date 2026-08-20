@@ -213,11 +213,14 @@ python -m agri_sandbox.analyze --results-dir results/formal --out results/formal
 ```
 results/formal/
 ├── runs_index.json              # 全部运行索引（含扩展元信息）
-├── summary.json / summary.csv   # analyze 输出
+├── summary.json / summary.csv   # analyze 输出（基础处理效应）
+├── summary_full.json / summary_full.csv   # analyze_full 输出（bootstrap CI 等，见 §8）
 ├── <scenario>/repeat_<r>/
 │   ├── sqlite.db                # 回放（agent_state / env_state / profile）
-│   └── run_meta.json            # 元信息（增强版）
-└── config_snapshots/            # 每次运行的 configs 快照（见 7.2）
+│   ├── run_meta.json            # 元信息（增强版：model / code_commit / 步数 / 政策）
+│   ├── run_progress.json        # 运行进度（运行中每季实时更新，供 webview）
+│   ├── config_snapshot.json     # 政策 + 生效标定参数快照
+│   └── run.log                  # 运行日志（脚本 full 模式写入）
 ```
 
 ### 7.2 run_meta 增强（已实现于 `experiment.run_one`）
@@ -236,24 +239,33 @@ results/formal/
 
 另外，`run_one` 现按"生产季"逐步执行并写 `run_progress.json`（scenario/repeat/status/phase/step/step_total/started_at/updated_at），供 `webview/` 实时可视化。
 
-### 7.3 回放审计
+### 7.3 回放审计（已实现于 `agri_sandbox/audit_replay.py`）
 
-- `agri_policy_agent_state` 行数 = 农户数 × 总季数（每 run）；`agri_policy_env_state` 行数 = 总季数；
-- 异常检测脚本：净收入为 0/负占比、`planted_area=0` 占比、投保面积 > 种植面积（仅限有流转场景）等。
+```bash
+python -m agri_sandbox.audit_replay --results-dir results/formal   # 有异常退出码 1，可接入脚本门控
+```
+
+检查项：回放表行数完整性（agent_state = 农户数 × 总季数；env_state = 总季数）、净收入 ≤ 0 占比、
+`planted_area=0` 占比、投保面积 > 种植面积占比、`n_planting_farmers=0` 季度数；异常占比 > 20% 标记 FAIL。
 
 ---
 
 ## 8. 分析方案升级
 
+分析实现（**已实现于 `agri_sandbox/analyze_full.py`**，演示数据已验证）：
+
+```bash
+python -m agri_sandbox.analyze_full --results-dir results/formal --bootstrap 2000
+# 输出 <out>/summary_full.json / summary_full.csv，并打印 Markdown 摘要
+```
+
 | 分析 | 方法 | 输出 |
 | --- | --- | --- |
-| 主效应 | 分情景 基线 vs 政策 配对差异 + **bootstrap 95% CI**（以重复为抽样单元） | 表：Δ、CI、p（若重复 ≥8 可做 bootstrap-t） |
-| 异质性 | 按规模 / 风险态度 / 区域分组，组间效应对比 | 异质性表 + 交互方向 |
-| 机制 | 决策日志质性编码："风险预期路径"（保险/灾害/风险词）与"收益比较路径"（价格/补贴/成本词），统计政策期出现频次 | 机制编码表 |
-| 稳健性 | ① 剔除赔付极端重复；② 种子敏感性（换 base seed）；③ 参数 ±20% 敏感性；④ 多 `start_date` 年景变体（可选） | 稳健性表 |
-| 成本效益 | 单位补贴净收入增益 = Δ净收入 / 全村补贴支出；粮食安全—增收 Pareto 前沿 | 效益表 + 图 |
-
-分析实现建议：`agri_sandbox/analyze.py` 扩展（现仅输出均值/Δ），新增 `agri_sandbox/analyze_bootstrap.py` 或独立 `analysis/` 脚本，输出 `formal/summary_full.{json,csv}` 与图表（复用 pgfplots/Matplotlib）。
+| 主效应 | 分情景 基线 vs 政策 配对差异 + **bootstrap 95% CI**（农户级抽样，b 可调） | 表：Δ、Δ%、CI |
+| 异质性 | 按经营规模分组（`core_agent_profile.profile.scale`：小农户/中农户/规模经营户） | 分组 Δ 与 n |
+| 机制 | 决策日志质性编码："风险预期"（保险/灾害/风险/减产/赔付/亏）与"收益比较"（价格/补贴/成本/收益/收入/划算）关键词频次；日志缺失时降级为无数据 | 机制编码表 |
+| 稳健性 | 多重复（r>2）时剔除偏离中位数最大的重复后重算 | 剔除前后 Δ 对比 |
+| 成本效益 | 单位补贴净收入增益 = 全村 Δ净收入 / 政策期补贴支出；粮食安全（种植面积）—增收 Pareto 点 | 效益表 + Pareto 数据 |
 
 ---
 
@@ -262,7 +274,7 @@ results/formal/
 - **固定种子**：`seed = 42 + repeat`，跨运行可复现；
 - **模型与温度**：`.env` 锁定 `AGENTSOCIETY_NANO_LLM_MODEL`（mimo-v2.5），统一温度（建议 0.2），写入 run_meta；
 - **代码版本**：正式批次前记录 `git rev-parse HEAD`，每批写入 run_meta；
-- **config 快照**：每 run 复制 `policy_scenarios.json` + `economics.json` 到 `results/formal/config_snapshots/`；
+- **config 快照**：每 run 写 `run_dir/config_snapshot.json`（政策 + 生效标定参数，`run_one` 自动生成）；
 - **复现清单**（交付时附）：`requirements.txt` 版本、`.env.example`、种子方案、模型/温度、代码 commit、config 快照、数据提取脚本 `paper/result/extract_data.py`。
 
 ---

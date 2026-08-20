@@ -35,6 +35,29 @@
 
 **产物**：`summary.json`、`summary.csv`，并打印 Markdown 摘要表（基线 vs 政策 + 处理效应 Δ / 相对变化 + 农户级净收入效应均值 ± 标准差）。
 
+## `analyze_full`（升级分析）
+
+分析入口：`python -m agri_sandbox.analyze_full`
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--results-dir PATH` | `./results` | 结果根目录 |
+| `--out PATH` | 同 `--results-dir` | 摘要输出目录 |
+| `--baseline-steps N` | 取 `run_meta.json` | 覆盖基线阶段步数 |
+| `--bootstrap N` | 2000 | bootstrap 抽样次数 |
+
+**产物**：`summary_full.json` / `summary_full.csv`——主效应 + 农户级 bootstrap 95% CI、按规模异质性、机制编码（风险预期/收益比较关键词）、多重复稳健性（剔除极端重复）、成本效益（单位补贴增益）与 Pareto 点。
+
+## `audit_replay`（回放审计）
+
+分析入口：`python -m agri_sandbox.audit_replay`
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--results-dir PATH` | `./results` | 结果根目录 |
+
+检查回放行数完整性（agent_state = 农户数 × 总季数；env_state = 总季数）与异常占比（净收入 ≤ 0、种植面积 0、投保 > 种植、零种植季度）；有异常退出码 1。
+
 ## `unittest`（纯核算单测）
 
 ```bash

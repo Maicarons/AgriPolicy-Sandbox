@@ -39,6 +39,34 @@ python -m agri_sandbox.analyze [选项]
 
 并附**农户级净收入处理效应**：均值 ± 标准差（n = 有前后两阶段数据的农户数）。
 
+## 升级分析 analyze_full（bootstrap CI / 异质性 / 机制 / 稳健性 / 成本效益）
+
+`agri_sandbox/analyze_full.py` 在基础分析之上提供统计升级（对应完整实验计划 §8）：
+
+```bash
+python -m agri_sandbox.analyze_full --results-dir results --bootstrap 2000
+```
+
+| 输出 | 说明 |
+| --- | --- |
+| `summary_full.json` / `summary_full.csv` | 完整结果（主效应 + CI + 异质性 + 机制 + 稳健性 + Pareto） |
+| 主效应 | Δ净收入 + **农户级 bootstrap 95% CI**（b 可调） |
+| 异质性 | 按经营规模分组（小农户/中农户/规模经营户，读自 `core_agent_profile.profile.scale`） |
+| 机制编码 | 扫描决策日志/工作区文本，统计"风险预期"与"收益比较"关键词频次（无日志时提示跳过） |
+| 稳健性 | 多重复（r>2）时剔除偏离中位数的极端重复后重算效应 |
+| 成本效益 | 单位补贴净收入增益 = 全村 Δ净收入 / 政策期补贴支出；粮食安全—增收 Pareto 点 |
+
+## 回放审计 audit_replay（数据完整性检查）
+
+`agri_sandbox/audit_replay.py` 检查回放数据的完整性与异常占比（完整实验计划 §7.3）：
+
+```bash
+python -m agri_sandbox.audit_replay --results-dir results    # 有异常退出码 1，可接入脚本门控
+```
+
+检查项：`agent_state` 行数 = 农户数 × 总季数、`env_state` 行数 = 总季数、
+净收入 ≤ 0 占比、`planted_area=0` 占比、投保面积 > 种植面积占比、`n_planting_farmers=0` 季度数。
+
 ## 指标口径
 
 - 结果指标：粮食播种面积占比、农户人均纯收入、务农劳动力占比、土地流转率、保险参与率。
