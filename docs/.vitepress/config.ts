@@ -55,6 +55,7 @@ export default defineConfig({
             { text: '研究问题与假设', link: '/methodology/research-questions' },
             { text: '实验设计', link: '/methodology/experimental-design' },
             { text: '识别策略', link: '/methodology/identification' },
+            { text: '完整实验计划', link: '/methodology/full-experiment-plan' },
           ],
         },
       ],

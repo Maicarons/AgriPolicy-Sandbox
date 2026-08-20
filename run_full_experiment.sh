@@ -23,7 +23,7 @@ cd "$HERE"
 # ---------- 可调参数 ----------
 FORMAL_DIR="results/formal"
 SMOKE_DIR="results/smoke"
-PARALLEL=4                 # 并行进程数（内存充足可调 8；注意 LLM API 并发限流）
+PARALLEL=8                 # 并行进程数（决策 D4：8 并行；注意 LLM API 并发限流）
 AGENTS=50
 BASELINE_STEPS=8
 POLICY_STEPS=8

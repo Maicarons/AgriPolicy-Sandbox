@@ -1,0 +1,19 @@
+{
+  "$comment": "基于公开统计数据的标定参数（2024 口径），逐项来源见 docs/calibration-sources.csv。正式论文使用前建议按目标区域（华北/东北/长江中游/西南）进一步复核。单位：面积=亩，金额=元，价格=元/kg。",
+  "crops": {
+    "wheat":    { "yield": 396,  "price": 2.4, "cost": 500,  "premium": 45, "insured_yield": 396 },
+    "corn":     { "yield": 439,  "price": 2.1, "cost": 544,  "premium": 49, "insured_yield": 439 },
+    "rice":     { "yield": 477,  "price": 2.6, "cost": 700,  "premium": 48, "insured_yield": 477 },
+    "soybean":  { "yield": 133,  "price": 4.5, "cost": 278,  "premium": 25, "insured_yield": 133 },
+    "vegetable":{ "yield": 2500, "price": 2.0, "cost": 1500, "premium": 40, "insured_yield": 2500 }
+  },
+  "rent_in_per_mu": 500.0,
+  "rent_out_per_mu": 500.0,
+  "disaster_threshold": -0.15,
+  "insurance_payout_ratio": 0.7,
+  "price_shock_bounds": [-0.4, 0.4],
+  "price_shock_sigma": 0.05,
+  "weather_shock_bounds": [-0.5, 0.3],
+  "weather_shock_mu": -0.02,
+  "weather_shock_sigma": 0.18
+}
