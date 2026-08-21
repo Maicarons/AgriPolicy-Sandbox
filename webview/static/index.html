@@ -17,6 +17,10 @@
     </div>
   </div>
   <div class="topmeta">
+    <div class="proj-pick">
+      <label for="project-select">项目</label>
+      <select id="project-select"></select>
+    </div>
     <div class="stat"><span class="dot dot-run"></span>运行中 <b id="stat-running">0</b></div>
     <div class="stat"><span class="dot dot-done"></span>已完成 <b id="stat-done">0</b></div>
     <div class="stat"><span class="dot dot-pend"></span>待运行 <b id="stat-pending">0</b></div>
@@ -73,10 +77,22 @@
       </table>
     </div>
   </section>
+
+  <section class="panel log-panel">
+    <div class="panel-head">
+      <h2>运行日志 <span class="muted" id="log-sub"></span></h2>
+      <div class="log-controls">
+        <span class="log-toggle" id="log-follow" title="自动滚动到底部">📌 跟随</span>
+        <button class="log-btn" id="log-pause" title="暂停/继续自动刷新">⏸ 暂停</button>
+      </div>
+    </div>
+    <pre id="log-view" class="log-view"><div class="placeholder">点击上方某个运行查看其实时日志…</div></pre>
+    <div class="log-meta muted" id="log-meta"></div>
+  </section>
 </main>
 
 <footer class="foot">
-  AgriPolicy Sandbox · 每 3s 自动刷新 · 数据来源：<code>results/</code> 回放与运行元信息
+  AgriPolicy Sandbox · 每 3s 自动刷新 · 数据来源：<code>results/</code> 回放与运行元信息 · 当前项目：<code id="foot-project">—</code>
 </footer>
 
 <script src="/assets/app.js"></script>

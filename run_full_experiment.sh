@@ -29,6 +29,7 @@ BASELINE_STEPS=8
 POLICY_STEPS=8
 REPEATS=10                 # 正式批次重复次数（预算自适应后可调低）
 SEED=42
+ECONOMICS="configs/economics.calibrated.json"   # 标定参数（决策 D3：先标定再跑正式批）
 WEBUI_PORT=8000             # 可视化 Web 端口（webui 子命令）
 SCENARIOS=(baseline grain_subsidy insurance_subsidy land_transfer_subsidy combined)
 
@@ -38,12 +39,12 @@ log() { echo "[$(date '+%F %T')] $*"; }
 cmd_smoke() {
   log "门 1：连通性自检（baseline，3 户 × 1+1 季）"
   python -m agri_sandbox.run_experiment --scenario baseline --agents 3 \
-      --baseline-steps 1 --policy-steps 1 --repeats 1 --results-dir "$SMOKE_DIR"
+      --baseline-steps 1 --policy-steps 1 --repeats 1 --economics "$ECONOMICS" --results-dir "$SMOKE_DIR"
 
   log "门 2：冒烟批次（combined，10 户 × 2+2 季）计时基准"
   start=$(date +%s)
   python -m agri_sandbox.run_experiment --scenario combined --agents 10 \
-      --baseline-steps 2 --policy-steps 2 --repeats 1 --results-dir "$SMOKE_DIR"
+      --baseline-steps 2 --policy-steps 2 --repeats 1 --economics "$ECONOMICS" --results-dir "$SMOKE_DIR"
   end=$(date +%s)
   secs=$((end - start))
   rate=$(awk -v s="$secs" 'BEGIN{printf "%.1f", s/40}')   # 10 户 × 4 季 = 40 户季
@@ -54,40 +55,17 @@ cmd_smoke() {
 # ------------------------------------------------------------
 cmd_full() {
   mkdir -p "$FORMAL_DIR"
-  tasks=()
-  for sk in "${SCENARIOS[@]}"; do
-    for ((r = 0; r < REPEATS; r++)); do
-      if [ -f "$FORMAL_DIR/$sk/repeat_$r/run_meta.json" ]; then
-        log "跳过已完成：$sk repeat_$r"
-        continue
-      fi
-      mkdir -p "$FORMAL_DIR/$sk/repeat_$r"
-      tasks+=("python -m agri_sandbox.run_experiment --scenario $sk --repeat $r --agents $AGENTS --baseline-steps $BASELINE_STEPS --policy-steps $POLICY_STEPS --seed $SEED --results-dir $FORMAL_DIR >> \"$FORMAL_DIR/$sk/repeat_$r/run.log\" 2>&1")
-    done
-  done
-
-  local total=${#tasks[@]}
-  if [ "$total" -eq 0 ]; then
-    log "全部 ${REPEATS} 重复 × ${#SCENARIOS[@]} 情景已完成，无需运行。"
-    cmd_analyze
-    return
-  fi
-  log "待运行 $total 个 (情景, 重复)，并行度 $PARALLEL（日志：results/formal/<情景>/repeat_<r>/run.log）"
-  # 手动并行调度（bash 后台 & + wait；避免 xargs 在部分环境下 exec 失败）。
-  # 单个 run 失败不中断其余；断点续跑会跳过已完成，重跑即可补上失败项。
-  pids=()
-  i=0
-  for t in "${tasks[@]}"; do
-    sh -c "$t" &
-    pids+=("$!")
-    i=$((i + 1))
-    if [ "$i" -ge "$PARALLEL" ]; then
-      for p in "${pids[@]}"; do wait "$p" || log "警告：某个 run 失败（重跑 ./run_full_experiment.sh full 可续跑）"; done
-      pids=()
-      i=0
-    fi
-  done
-  for p in "${pids[@]}"; do wait "$p" || log "警告：某个 run 失败（重跑 ./run_full_experiment.sh full 可续跑）"; done
+  # 用 Python subprocess 调度（scripts/run_parallel.py）：规避 Windows 下 MSYS bash
+  # fork 大量重进程的内存映射失败；断点续跑（跳过已完成）在调度器内实现。
+  python scripts/run_parallel.py \
+      --parallel "$PARALLEL" \
+      --agents "$AGENTS" \
+      --baseline-steps "$BASELINE_STEPS" \
+      --policy-steps "$POLICY_STEPS" \
+      --repeats "$REPEATS" \
+      --seed "$SEED" \
+      --economics "$ECONOMICS" \
+      --results-dir "$FORMAL_DIR"
   log "正式批次全部完成 → 运行分析"
   cmd_analyze
 }

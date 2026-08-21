@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import date
 from pathlib import Path
 
 # 必须在导入 agentsociety2 之前加载 .env（agentsociety2.config 在导入时校验 API Key）
@@ -33,10 +34,49 @@ from .experiment import ExperimentSpec, run_all  # noqa: E402
 HERE = Path(__file__).resolve().parent
 DEFAULT_CONFIG = HERE.parent / "configs" / "policy_scenarios.json"
 
+# 卡死判定阈值：run_progress.json 超过该秒数未更新且状态为 running，视为中断残留
+STALE_SECONDS = 300
+
 
 def _load_config(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _default_results_dir() -> Path:
+    """未指定 --results-dir 时，默认使用 results/<YYYY-MM-DD> 日期目录。"""
+    return Path("results") / date.today().isoformat()
+
+
+def _cleanup_stale_run(run_dir: Path) -> None:
+    """清理上次中断残留（running 且超过 5 分钟未更新），避免续跑混入脏数据。
+
+    仅删除回放库与完成标记；run.log 保留以便追溯。
+    """
+    prog_f = run_dir / "run_progress.json"
+    if not prog_f.exists():
+        return
+    try:
+        prog = json.loads(prog_f.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if prog.get("status") != "running":
+        return
+    updated = prog.get("updated_at")
+    if not updated:
+        return
+    try:
+        from datetime import datetime
+        age = (datetime.now() - datetime.fromisoformat(updated)).total_seconds()
+    except Exception:
+        age = STALE_SECONDS + 1  # 无法解析时间戳，按陈旧处理
+    if age <= STALE_SECONDS:
+        return  # 可能正在运行，不动
+    for f in ("sqlite.db", "run_meta.json"):
+        p = run_dir / f
+        if p.exists():
+            p.unlink()
+    print(f"  [清理] {run_dir}: 上次运行中断残留已清理（进度停留在 {updated}）")
 
 
 def main() -> None:
@@ -58,8 +98,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--economics", type=Path, default=None,
                         help="标定参数 JSON（默认 configs/economics.json）")
-    parser.add_argument("--results-dir", type=Path, default=Path("results"),
-                        help="结果根目录（默认 ./results，已被 .gitignore 忽略）")
+    parser.add_argument("--results-dir", type=Path, default=None,
+                        help="结果根目录（默认 results/<YYYY-MM-DD> 日期目录，已被 .gitignore 忽略）")
     parser.add_argument("--no-phased", action="store_true",
                         help="不使用分阶段反事实，政策从第一步即生效")
     args = parser.parse_args()
@@ -79,7 +119,7 @@ def main() -> None:
         # 默认仅跑 baseline 做连通性自检
         keys = ["baseline"]
 
-    results_dir = args.results_dir
+    results_dir = args.results_dir or _default_results_dir()
     results_dir.mkdir(parents=True, exist_ok=True)
     phased = not args.no_phased
     repeats = int(d["repeats"])
@@ -118,6 +158,8 @@ def main() -> None:
     for s in specs:
         if economics_path is not None:
             s.economics_path = economics_path
+        # 续跑保护：清理上次中断残留（正在运行的不动）
+        _cleanup_stale_run(s.run_dir)
 
     print(
         f"== 农业政策沙盒实验 == 情景={keys} 重复={len(specs) // max(1, len(keys))} "

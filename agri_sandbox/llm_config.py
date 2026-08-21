@@ -38,12 +38,13 @@ OPTIONAL_VARS = (
 
 
 def _find_dotenv(start: Path | None = None) -> Path | None:
-    """从 start（默认当前工作目录）向上查找 .env 文件。"""
+    """从 start（默认当前工作目录）向上查找 .env 文件（优先 .env.local，回退 .env）。"""
     cur = (start or Path.cwd()).resolve()
     for parent in [cur, *cur.parents]:
-        cand = parent / ".env"
-        if cand.is_file():
-            return cand
+        for name in (".env.local", ".env"):
+            cand = parent / name
+            if cand.is_file():
+                return cand
     return None
 
 

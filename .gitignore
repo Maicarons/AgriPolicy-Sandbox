@@ -37,6 +37,7 @@ Thumbs.db
 
 # ===== 日志 / 临时 =====
 *.log
+*.stackdump
 .agent_workspace/
 
 paper/

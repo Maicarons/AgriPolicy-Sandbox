@@ -20,14 +20,24 @@ const CROP_LABELS = {
 const SCALE_LABELS = { small: "小农", medium: "中农", large: "大户" };
 
 const state = {
+  projects: [],        // [{name, total, running, done, stale}]
+  project: null,       // 当前 project 名称
   overview: null,
   scenarioDefs: null,
   selected: null, // { scenario, repeat }
   runData: null,
   selectedFarmer: null,
+  logTimer: null,      // 日志轮询定时器
+  logPaused: false,
+  logFollow: true,
 };
 
 const $ = (id) => document.getElementById(id);
+
+// 状态工具：run 记录 → 展示状态（running / done / stale / pending）
+const stOf = (r) =>
+  r.status === "running" ? (r.stale ? "stale" : "running") : r.status === "done" ? "done" : "pending";
+const stLabel = (s) => ({ running: "运行中", done: "已完成", stale: "已中断", pending: "待运行" }[s] || s);
 
 /* ---------------- 基础工具 ---------------- */
 async function api(path) {
@@ -61,10 +71,43 @@ function setConn(ok) {
   $("conn").className = "conn " + (ok ? "ok" : "bad");
 }
 
+async function loadProjects() {
+  const d = await api("/api/projects");
+  state.projects = d.projects || [];
+  const sel = $("project-select");
+  sel.innerHTML = "";
+  for (const p of state.projects) {
+    const op = document.createElement("option");
+    op.value = p.name;
+    const runTag = p.running ? ` · 🔴${p.running}运行` : p.stale ? ` · ⚠${p.stale}中断` : "";
+    op.textContent = `${p.name}（${p.done}/${p.total}${runTag}）`;
+    sel.appendChild(op);
+  }
+  // 保持当前选择（若项目仍存在）
+  if (state.project && state.projects.some((p) => p.name === state.project)) {
+    sel.value = state.project;
+  } else {
+    state.project = state.projects[0]?.name ?? null;
+  }
+  if (state.project) sel.value = state.project;
+  sel.onchange = () => switchProject(sel.value);
+  return state.project;
+}
+
+function switchProject(name) {
+  state.project = name;
+  state.selected = null;
+  state.runData = null;
+  state.selectedFarmer = null;
+  stopLog();
+  return refreshOverview();
+}
+
 function renderTopStats(o) {
   $("stat-running").textContent = o.totals.running;
   $("stat-done").textContent = o.totals.done;
-  $("stat-pending").textContent = o.totals.pending;
+  $("stat-pending").textContent = (o.totals.stale || 0) + (o.totals.pending || 0);
+  $("stat-pending").title = `已中断 ${o.totals.stale || 0} · 待运行 ${o.totals.pending || 0}`;
 }
 
 function renderCards(o) {
@@ -74,19 +117,22 @@ function renderCards(o) {
     const card = document.createElement("div");
     card.className = "card" + (state.selected && state.selected.scenario === sc.scenario_key ? " active" : "");
     const pct = sc.total ? Math.round(((sc.done + sc.running) / sc.total) * 100) : 0;
+    const badgeCls = sc.running ? "running" : sc.total && sc.done === sc.total ? "done" : sc.stale ? "stale" : sc.total ? "pending" : "pending";
+    const badgeTxt = sc.running ? "运行中" : sc.total && sc.done === sc.total ? "完成" : sc.stale ? `中断 ${sc.stale}` : sc.total ? "进行中" : "待运行";
     card.innerHTML = `
       <div class="c-top">
         <div>
           <div class="c-name">${esc(sc.label)}</div>
           <div class="c-label">${esc(sc.scenario_key)}</div>
         </div>
-        <span class="badge ${sc.running ? "running" : sc.total && sc.done === sc.total ? "done" : "pending"}">
-          <span class="bd"></span>${sc.running ? "运行中" : sc.total && sc.done === sc.total ? "完成" : sc.total ? "进行中" : "待运行"}
+        <span class="badge ${badgeCls}">
+          <span class="bd"></span>${badgeTxt}
         </span>
       </div>
       <div class="c-counts">
         <span>完成 <b>${sc.done}</b></span>
         <span>运行 <b>${sc.running}</b></span>
+        <span>中断 <b>${sc.stale || 0}</b></span>
         <span>共 <b>${sc.total}</b></span>
       </div>
       <div class="c-bar"><i style="width:${pct}%"></i></div>`;
@@ -99,24 +145,26 @@ function renderTable(o) {
   const tb = $("runs-table").querySelector("tbody");
   tb.innerHTML = "";
   for (const r of o.runs) {
-    const st = r.status === "running" ? "running" : r.status === "done" ? "done" : "pending";
-    const pct = r.step_total ? Math.round((r.step / r.step_total) * 100) : r.status === "done" ? 100 : 0;
+    const st = stOf(r);
+    const pct = r.step_total ? Math.round((r.step / r.step_total) * 100) : st === "done" ? 100 : 0;
     const tr = document.createElement("tr");
     const sel = state.selected && state.selected.scenario === r.scenario_key && state.selected.repeat === r.repeat;
     if (sel) tr.className = "selected";
+    const phaseTxt = st === "stale" ? "已中断" : r.phase ? (r.phase === "baseline" ? "基线期" : "政策期") : "—";
     tr.innerHTML = `
       <td>${esc(r.scenario_label)}</td>
       <td>#${r.repeat}</td>
-      <td><span class="badge ${st}"><span class="bd"></span>${st === "running" ? "运行中" : st === "done" ? "已完成" : "待运行"}</span></td>
-      <td>${r.phase ? (r.phase === "baseline" ? "基线期" : "政策期") : "—"}</td>
-      <td>${r.step ?? "—"} / ${r.step_total ?? "—"}</td>
+      <td><span class="badge ${st}"><span class="bd"></span>${stLabel(st)}</span></td>
+      <td>${phaseTxt}</td>
+      <td>${st === "stale" ? "—" : `${r.step ?? "—"} / ${r.step_total ?? "—"}`}</td>
       <td><div class="progress-track"><i class="${st === "done" ? "done" : ""}" style="width:${pct}%"></i></div></td>
       <td>${fmtDur(r.elapsed_sec)}</td>
       <td>${esc(r.model || "—")}</td>`;
     tr.onclick = () => selectRun(r.scenario_key, r.repeat);
     tb.appendChild(tr);
   }
-  $("runs-hint").textContent = `共 ${o.runs.length} 个运行 · 结果目录 ${o.results_dir}`;
+  $("runs-hint").textContent = `共 ${o.runs.length} 个运行 · ${o.results_dir}`;
+  $("foot-project").textContent = o.project ?? "—";
 }
 
 /* ---------------- 情景 / 运行选择 ---------------- */
@@ -126,7 +174,10 @@ function runsOf(scenario) {
 
 function selectScenario(sk) {
   const runs = runsOf(sk);
-  const pick = runs.find((r) => r.status === "running") || runs.find((r) => r.status === "done") || runs[0];
+  const pick = runs.find((r) => r.status === "running" && !r.stale)
+    || runs.find((r) => r.status === "done")
+    || runs.find((r) => r.status === "running" && r.stale)
+    || runs[0];
   if (!pick) return;
   fillRunSelect(sk, runs, pick.repeat);
   selectRun(sk, pick.repeat);
@@ -138,7 +189,7 @@ function fillRunSelect(sk, runs, activeRepeat) {
   for (const r of runs) {
     const op = document.createElement("option");
     op.value = r.repeat;
-    op.textContent = `重复 #${r.repeat} · ${r.status === "running" ? "运行中" : r.status === "done" ? "已完成" : "待运行"}`;
+    op.textContent = `重复 #${r.repeat} · ${stLabel(stOf(r))}`;
     sel.appendChild(op);
   }
   sel.value = String(activeRepeat);
@@ -155,20 +206,64 @@ async function selectRun(sk, rep) {
   [...cards].forEach((c) => { if (c.textContent.includes(sk)) c.classList.add("active"); });
   renderTable(state.overview); // 同步行高亮
   await refreshRun(true);
+  startLog();
+}
+
+/* ---------------- 实时日志模块 ---------------- */
+async function refreshLog() {
+  if (!state.selected || !state.project || state.logPaused) return;
+  const { scenario, repeat } = state.selected;
+  try {
+    const d = await api(`/api/run/${state.project}/${scenario}/${repeat}/log?tail=300`);
+    const view = $("log-view");
+    const follow = state.logFollow;
+    const wasAtBottom = view.scrollTop + view.clientHeight >= view.scrollHeight - 8;
+    view.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    const doc = document.createDocumentFragment(); // 逐行 span 渲染，避免超长日志一次性卡死
+    const block = document.createElement("div");
+    for (const ln of d.lines) {
+      const row = document.createElement("div");
+      row.className = "log-line";
+      row.textContent = ln;
+      block.appendChild(row);
+    }
+    doc.appendChild(block);
+    view.appendChild(doc);
+    if (follow || wasAtBottom) view.scrollTop = view.scrollHeight;
+    $("log-sub").textContent = `${d.scenario_key} #${d.repeat}`;
+    $("log-meta").textContent = `${d.total} 行 · ${d.file.replace(/\\/g, "/")}`;
+  } catch (e) {
+    const view = $("log-view");
+    view.innerHTML = `<div class="placeholder">该运行无日志（${e.message}）</div>`;
+  }
+}
+
+function startLog() {
+  stopLog();
+  state.logTimer = setInterval(refreshLog, 3000);
+  refreshLog();
+}
+
+function stopLog() {
+  if (state.logTimer) { clearInterval(state.logTimer); state.logTimer = null; }
+  $("log-view").innerHTML = `<div class="placeholder">点击上方某个运行查看其实时日志…</div>`;
+  $("log-sub").textContent = "";
+  $("log-meta").textContent = "";
 }
 
 /* ---------------- 运行数据拉取与渲染 ---------------- */
 async function refreshRun(force) {
-  if (!state.selected) return;
+  if (!state.selected || !state.project) return;
   const { scenario, repeat } = state.selected;
   const cur = state.runData;
   // 若非运行中且已有数据，无需刷新
   if (!force && cur && cur.progress?.status !== "running") return;
   try {
     const [run, ts, ag] = await Promise.all([
-      api(`/api/run/${scenario}/${repeat}`),
-      api(`/api/run/${scenario}/${repeat}/timeseries`),
-      api(`/api/run/${scenario}/${repeat}/agent-series`),
+      api(`/api/run/${state.project}/${scenario}/${repeat}`),
+      api(`/api/run/${state.project}/${scenario}/${repeat}/timeseries`),
+      api(`/api/run/${state.project}/${scenario}/${repeat}/agent-series`),
     ]);
     state.runData = { run, ts, ag };
     renderScene();
@@ -435,9 +530,23 @@ function renderLegend() {
 }
 
 /* ---------------- 主循环 ---------------- */
+// 日志控制按钮
+$("log-pause").onclick = () => {
+  state.logPaused = !state.logPaused;
+  $("log-pause").textContent = state.logPaused ? "▶ 继续" : "⏸ 暂停";
+  if (!state.logPaused) refreshLog();
+};
+$("log-follow").onclick = () => {
+  state.logFollow = !state.logFollow;
+  $("log-follow").className = "log-toggle" + (state.logFollow ? " on" : "");
+  if (state.logFollow) $("log-view").scrollTop = $("log-view").scrollHeight;
+};
+
 async function refreshOverview() {
   try {
-    state.overview = await api("/api/overview");
+    if (!state.project) await loadProjects();
+    if (!state.project) { setConn(false); return; }
+    state.overview = await api(`/api/overview?project=${encodeURIComponent(state.project)}`);
     if (!state.scenarioDefs) state.scenarioDefs = await api("/api/scenarios");
     setConn(true);
     renderTopStats(state.overview);
